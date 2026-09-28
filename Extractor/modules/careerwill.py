@@ -184,81 +184,107 @@ async def career_will(app: Client, message: Message):
         await forward_to_log(input1, "Careerwill Extractor")
         raw_text = input1.text.strip()
 
+        # Login flow taken from the supplied working CareerWill script
+        login_url = "https://elearn.crwilladmin.com/api/v9/login-other"
+
         if "*" in raw_text:
-            email, password = raw_text.split("*")
-            headers = {
-                "Host": "elearn.crwilladmin.com",
-                "appver": "107",
-                "apptype": "android",
-                "cwkey": "+HwN3zs4tPU0p8BpOG5ZlXIU6MaWQmnMHXMJLLFcJ5m4kWqLXGLpsp8+2ydtILXy",
-                "content-type": "application/json; charset=UTF-8",
-                "accept-encoding": "gzip",
-                "user-agent": "okhttp/5.0.0-alpha.2"
-            }
-            data = {
-                "deviceType": "android",
-                "password": password,
-                "deviceModel": "Xiaomi M2007J20CI",
-                "deviceVersion": "Q(Android 10.0)",
-                "email": email,
-                "deviceIMEI": "d57adbd8a7b8u9i9",
-                "deviceToken": "fake_device_token"
-            }
-
-            login_url = "https://elearn.crwilladmin.com/api/v9/login-other"
-
             try:
-                response = requests.post(login_url, headers=headers, json=data, timeout=30)
+                email, password = raw_text.split("*", 1)
+                email = email.strip()
+                password = password.strip()
+
+                login_headers = headers.copy()
+                data = {
+                    "deviceType": "android",
+                    "password": password,
+                    "deviceModel": "Xiaomi M2007J20CI",
+                    "deviceVersion": "Q(Android 10.0)",
+                    "email": email,
+                    "deviceIMEI": "d57adbd8a7b8u9i9",
+                    "deviceToken": "c8HzsrndRB6dMaOuKW2qMS:APA91bHu4YCP4rqhpN3ZnLjzL3LuLljxXua2P2aUXfIS4nLeT4LnfwWY6MiJJrG9XWdBUIfuA6GIXBPIRTGZsDyripIXoV1CyP3kT8GKuWHgGVn0DFRDEnXgAIAmaCE6acT3oussy2"
+                }
+
+                response = requests.post(
+                    login_url,
+                    headers=login_headers,
+                    json=data,
+                    timeout=30
+                )
+
+                if response.status_code != 200:
+                    await message.reply_text(
+                        f"❌ Login failed with status "
+                        f"<code>{response.status_code}</code>:\n"
+                        f"<code>{response.text[:3000]}</code>"
+                    )
+                    return
+
+                try:
+                    login_result = response.json()
+                    token = login_result["data"]["token"]
+                except (ValueError, KeyError, TypeError):
+                    await message.reply_text(
+                        "❌ <b>Login response invalid</b>\n\n"
+                        f"<code>{response.text[:3000]}</code>"
+                    )
+                    return
+
+                await message.reply_text("✅ <b>CareerWill Login Successful</b>")
+
             except requests.RequestException as e:
-                await message.reply_text(f"❌ <b>Login request failed</b>\n\n<code>{str(e)}</code>")
+                await message.reply_text(
+                    f"❌ <b>Login request failed</b>\n\n<code>{str(e)}</code>"
+                )
                 return
-
-            print("LOGIN STATUS:", response.status_code)
-            print("LOGIN RESPONSE:", repr(response.text))
-
-            if not response.text.strip():
-                await message.reply_text(f"❌ <b>CareerWill returned an empty response</b>\n\nHTTP Status: <code>{response.status_code}</code>")
+            except Exception as e:
+                await message.reply_text(
+                    f"❌ <b>Error during login</b>\n\n<code>{str(e)}</code>"
+                )
                 return
-
-            try:
-                result = response.json()
-            except ValueError:
-                await message.reply_text(f"❌ <b>CareerWill returned a non-JSON response</b>\n\nHTTP Status: <code>{response.status_code}</code>\nResponse: <code>{response.text[:3000]}</code>")
-                return
-
-            if not isinstance(result, dict):
-                await message.reply_text(f"❌ <b>Unexpected login response</b>\n\n<code>{str(result)[:3000]}</code>")
-                return
-
-            login_data = result.get("data") or {}
-            token = login_data.get("token")
-
-            if not token:
-                await message.reply_text(f"❌ <b>CareerWill login failed</b>\n\n<code>{str(result)[:3000]}</code>")
-                return
-
-            await message.reply_text("✅ <b>CareerWill Login Successful</b>\n\n" f"🆔 <b>ID:</b> <code>{email}</code>")
-
         else:
             token = raw_text
 
-        # Fetch Batches
-        headers = {
-            "Host": "elearn.crwilladmin.com",
-            "appver": "107",
-            "apptype": "android",
-            "usertype": "2",
-            "token": token,
-            "cwkey": "+HwN3zs4tPU0p8BpOG5ZlXIU6MaWQmnMHXMJLLFcJ5m4kWqLXGLpsp8+2ydtILXy",
-            "content-type": "application/json; charset=UTF-8",
-            "accept-encoding": "gzip",
-            "user-agent": "okhttp/5.0.0-alpha.2"
-        }
+        # Use the returned token for authenticated API requests
+        headers_with_token = headers.copy()
+        headers_with_token["token"] = token
 
+        # Fetch batches only after a valid token exists
         batch_url = "https://elearn.crwilladmin.com/api/v9/my-batch"
-        response = requests.get(batch_url, headers=headers)
-        
-        batches = response.json()["data"]["batchData"]
+
+        try:
+            response = requests.get(
+                batch_url,
+                headers=headers_with_token,
+                timeout=30
+            )
+        except requests.RequestException as e:
+            await message.reply_text(
+                f"❌ <b>Batch request failed</b>\n\n<code>{str(e)}</code>"
+            )
+            return
+
+        if response.status_code != 200:
+            await message.reply_text(
+                f"❌ Batch API request failed with status "
+                f"<code>{response.status_code}</code>:\n"
+                f"<code>{response.text[:3000]}</code>"
+            )
+            return
+
+        try:
+            batch_result = response.json()
+            batches = batch_result["data"]["batchData"]
+        except (ValueError, KeyError, TypeError):
+            await message.reply_text(
+                "❌ <b>Batch API response invalid</b>\n\n"
+                f"<code>{response.text[:3000]}</code>"
+            )
+            return
+
+        if not batches:
+            await message.reply_text("⚠️ No batches found for this account.")
+            return
+
         msg = "📚 <b>Available Batches</b>\n\n"
         for b in batches:
             msg += f"<code>{b['id']}</code> - <b>{b['batchName']}</b>\n"
