@@ -206,16 +206,52 @@ async def career_will(app: Client, message: Message):
             }
 
             login_url = "https://elearn.crwilladmin.com/api/v9/login-other"
-            response = requests.post(login_url, headers=headers, json=data)
-            token = response.json()["data"]["token"]
-            success_msg = (
-                "✅ <b>CareerWill Login Successful</b>\n\n"
-                f"🆔 <b>Credentials:</b> <code>{email}*{password}</code>"
+            response = requests.post(
+                login_url,
+                headers=headers,
+                json=data,
+                timeout=30
             )
-            await message.reply_text(success_msg)
-        else:
-            token = raw_text
-
+            
+            print("LOGIN STATUS:", response.status_code)
+            print("LOGIN RESPONSE:", repr(response.text))
+            
+            if not response.text.strip():
+                await message.reply_text(
+                    f"❌ CareerWill server returned an empty response.\n"
+                    f"HTTP Status: {response.status_code}"
+                )
+                return
+                try:
+                    result = response.json()
+                except ValueError:
+                    await message.reply_text(
+                        f"❌ CareerWill returned a non-JSON response.\n\n"
+                        f"HTTP Status: {response.status_code}\n"
+                        f"Response:\n<code>{response.text[:3000]}</code>"
+                    )
+                    return
+                    
+                    if "data" not in result or "token" not in result["data"]:
+                        await message.reply_text(
+                            f"❌ Login failed.\n\n"
+                            f"<code>{str(result)[:3000]}</code>"
+                        )
+                        return
+                        
+                        token = result["data"]["token"]
+                        
+                        await message.reply_text(
+                            "✅ <b>CareerWill Login Successful</b>"
+                        )
+                        success_msg = (
+                            "✅ <b>CareerWill Login Successful</b>\n\n"
+                            f"🆔 <b>Credentials:</b> <code>{email}*{password}</code>"
+                        )
+                        await message.reply_text(success_msg)
+                    else:
+                        token = raw_text
+                        
         # Fetch Batches
         headers = {
             "Host": "elearn.crwilladmin.com",
