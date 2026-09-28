@@ -206,52 +206,42 @@ async def career_will(app: Client, message: Message):
             }
 
             login_url = "https://elearn.crwilladmin.com/api/v9/login-other"
-            response = requests.post(
-                login_url,
-                headers=headers,
-                json=data,
-                timeout=30
-            )
-            
+
+            try:
+                response = requests.post(login_url, headers=headers, json=data, timeout=30)
+            except requests.RequestException as e:
+                await message.reply_text(f"❌ <b>Login request failed</b>\n\n<code>{str(e)}</code>")
+                return
+
             print("LOGIN STATUS:", response.status_code)
             print("LOGIN RESPONSE:", repr(response.text))
-            
+
             if not response.text.strip():
-                await message.reply_text(
-                    f"❌ CareerWill server returned an empty response.\n"
-                    f"HTTP Status: {response.status_code}"
-                )
+                await message.reply_text(f"❌ <b>CareerWill returned an empty response</b>\n\nHTTP Status: <code>{response.status_code}</code>")
                 return
-                try:
-                    result = response.json()
-                except ValueError:
-                    await message.reply_text(
-                        f"❌ CareerWill returned a non-JSON response.\n\n"
-                        f"HTTP Status: {response.status_code}\n"
-                        f"Response:\n<code>{response.text[:3000]}</code>"
-                    )
-                    return
-                    
-                    if "data" not in result or "token" not in result["data"]:
-                        await message.reply_text(
-                            f"❌ Login failed.\n\n"
-                            f"<code>{str(result)[:3000]}</code>"
-                        )
-                        return
-                        
-                        token = result["data"]["token"]
-                        
-                        await message.reply_text(
-                            "✅ <b>CareerWill Login Successful</b>"
-                        )
-                        success_msg = (
-                            "✅ <b>CareerWill Login Successful</b>\n\n"
-                            f"🆔 <b>Credentials:</b> <code>{email}*{password}</code>"
-                        )
-                        await message.reply_text(success_msg)
-                    else:
-                        token = raw_text
-                        
+
+            try:
+                result = response.json()
+            except ValueError:
+                await message.reply_text(f"❌ <b>CareerWill returned a non-JSON response</b>\n\nHTTP Status: <code>{response.status_code}</code>\nResponse: <code>{response.text[:3000]}</code>")
+                return
+
+            if not isinstance(result, dict):
+                await message.reply_text(f"❌ <b>Unexpected login response</b>\n\n<code>{str(result)[:3000]}</code>")
+                return
+
+            login_data = result.get("data") or {}
+            token = login_data.get("token")
+
+            if not token:
+                await message.reply_text(f"❌ <b>CareerWill login failed</b>\n\n<code>{str(result)[:3000]}</code>")
+                return
+
+            await message.reply_text("✅ <b>CareerWill Login Successful</b>\n\n" f"🆔 <b>ID:</b> <code>{email}</code>")
+
+        else:
+            token = raw_text
+
         # Fetch Batches
         headers = {
             "Host": "elearn.crwilladmin.com",
